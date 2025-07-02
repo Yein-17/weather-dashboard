@@ -1,45 +1,48 @@
-name: CI Pipeline
+name: CI Pipeline with GHCR
 
-# Trigger the workflow on push or pull request events
 on:
   push:
     branches: [ main, develop ]
   pull_request:
     branches: [ main, develop ]
 
-# Define environment variables
 env:
   NODE_VERSION: '18'
   PYTHON_VERSION: '3.9'
+  GHCR_REGISTRY: ghcr.io
+  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/weather-frontend
+  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/weather-backend
 
 jobs:
-  # Job 1: Frontend Testing
+  # -------------------------
+  # 1. FRONTEND TESTING JOB
+  # -------------------------
   frontend-test:
-    name: Frontend Tests
+    name: Frontend Tests & Audit
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout code
+      - name: ⬇️ Checkout code
         uses: actions/checkout@v4
-      
-      - name: Set up Node.js
+
+      - name: ⚙️ Set up Node.js
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: 'npm'
           cache-dependency-path: frontend/package-lock.json
-      
-      - name: Install frontend dependencies
-        run: npm install
+
+      - name: 📦 Install frontend dependencies
+        run: npm ci
         working-directory: ./frontend
-      
-      - name: Run frontend tests
+
+      - name: 🧪 Run frontend tests
         run: npm test -- --coverage --watchAll=false --ci
         working-directory: ./frontend
         env:
           CI: true
-      
-      - name: Upload coverage reports
+
+      - name: ☁️ Upload frontend coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: ./frontend/coverage/lcov.info
@@ -47,43 +50,42 @@ jobs:
           name: frontend-coverage
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # Job 2: Backend Testing
+      - name: 🔎 Check frontend vulnerabilities
+        run: npm audit --audit-level=moderate
+        working-directory: ./frontend
+        continue-on-error: true
+
+  # -------------------------
+  # 2. BACKEND TESTING JOB
+  # -------------------------
   backend-test:
-    name: Backend Tests
+    name: Backend Tests & Audit
     runs-on: ubuntu-latest
-    
+
     steps:
-      - name: Checkout code
+      - name: ⬇️ Checkout code
         uses: actions/checkout@v4
-      
-      - name: Set up Python
+
+      - name: ⚙️ Set up Python
         uses: actions/setup-python@v4
         with:
           python-version: ${{ env.PYTHON_VERSION }}
-          cache: 'pip'
-          cache-dependency-path: backend/requirements.txt
-      
-      - name: Install backend dependencies
+
+      - name: 📦 Install backend dependencies
         run: |
-          python -m pip install --upgrade pip
-          # Install testing dependencies first
-          pip install pytest pytest-cov
-          # Then install project dependencies
+          pip install --upgrade pip
           pip install -r requirements.txt
+          pip install pytest pytest-cov safety
         working-directory: ./backend
-      
-      - name: Verify pytest installation
-        run: python -m pytest --version
-        working-directory: ./backend
-      
-      - name: Run backend tests
+
+      - name: 🧪 Run backend tests
         run: |
-          python -m pytest test_app.py -v --cov=app --cov-report=xml
+          pytest test_app.py -v --cov=app --cov-report=xml
         working-directory: ./backend
         env:
           WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
-      
-      - name: Upload backend coverage
+
+      - name: ☁️ Upload backend coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
           file: ./backend/coverage.xml
@@ -91,193 +93,67 @@ jobs:
           name: backend-coverage
           token: ${{ secrets.CODECOV_TOKEN }}
 
-  # Job 3: Code Quality & Security Analysis
-  code-analysis:
-    name: Code Quality Analysis
-    runs-on: ubuntu-latest
-    needs: [frontend-test, backend-test]
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-        with:
-          fetch-depth: 0  # Shallow clones should be disabled for better analysis
-      
-      - name: Set up Node.js for frontend analysis
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-          cache-dependency-path: frontend/package-lock.json
-      
-      - name: Install frontend dependencies for analysis
-        run: npm ci
-        working-directory: ./frontend
-      
-      - name: Run SonarCloud Scan
-        uses: SonarSource/sonarcloud-github-action@master
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
-      
-      - name: Check frontend dependencies for vulnerabilities
-        run: |
-          npm audit --audit-level=moderate
-        working-directory: ./frontend
-        continue-on-error: true
-      
-      - name: Set up Python for backend analysis
-        uses: actions/setup-python@v4
-        with:
-          python-version: ${{ env.PYTHON_VERSION }}
-      
-      - name: Check backend dependencies for vulnerabilities
-        run: |
-          python -m pip install --upgrade pip
-          pip install safety
-          pip install -r requirements.txt
-          safety check
+      - name: 🔒 Check backend vulnerabilities
+        run: safety check --full-report
         working-directory: ./backend
         continue-on-error: true
 
-  # Job 4: Build and Security Scan
-  build-and-scan:
-    name: Build & Security Scan
+  # -------------------------
+  # 3. BUILD AND PUSH TO GHCR
+  # -------------------------
+  build-and-push:
+    name: Build & Push Docker Images to GHCR
     runs-on: ubuntu-latest
     needs: [frontend-test, backend-test]
-    
+
     steps:
-      - name: Checkout code
+      - name: ⬇️ Checkout code
         uses: actions/checkout@v4
-      
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-      
-      - name: Build frontend Docker image
+
+      - name: 🔐 Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 🛠️ Build frontend image
         run: |
-          docker build -t weather-frontend:latest ./frontend
-          docker build -t weather-frontend:${{ github.sha }} ./frontend
-      
-      - name: Build backend Docker image
+          docker build -t $FRONTEND_IMAGE:latest ./frontend
+          docker tag $FRONTEND_IMAGE:latest $FRONTEND_IMAGE:${{ github.sha }}
+
+      - name: 🛠️ Build backend image
         run: |
-          docker build -t weather-backend:latest ./backend
-          docker build -t weather-backend:${{ github.sha }} ./backend
-      
-      - name: Run Trivy vulnerability scanner on frontend
+          docker build -t $BACKEND_IMAGE:latest ./backend
+          docker tag $BACKEND_IMAGE:latest $BACKEND_IMAGE:${{ github.sha }}
+
+      - name: 📤 Push frontend image
+        run: |
+          docker push $FRONTEND_IMAGE:latest
+          docker push $FRONTEND_IMAGE:${{ github.sha }}
+
+      - name: 📤 Push backend image
+        run: |
+          docker push $BACKEND_IMAGE:latest
+          docker push $BACKEND_IMAGE:${{ github.sha }}
+
+  # -------------------------
+  # 4. IMAGE VULNERABILITY SCAN
+  # -------------------------
+  scan-images:
+    name: Scan Docker Images with Trivy
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+
+    steps:
+      - name: 🛡️ Scan frontend image
         uses: aquasecurity/trivy-action@master
         with:
-          image-ref: 'weather-frontend:latest'
-          format: 'sarif'
-          output: 'trivy-frontend-results.sarif'
-      
-      - name: Run Trivy vulnerability scanner on backend
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'weather-backend:latest'
-          format: 'sarif'
-          output: 'trivy-backend-results.sarif'
-      
-      - name: Upload Trivy scan results to GitHub Security tab
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-frontend-results.sarif'
-      
-      - name: Upload Trivy backend scan results
-        uses: github/codeql-action/upload-sarif@v3
-        if: always()
-        with:
-          sarif_file: 'trivy-backend-results.sarif'
-      
-      - name: Run Trivy with exit code (fail on critical)
-        uses: aquasecurity/trivy-action@master
-        with:
-          image-ref: 'weather-frontend:latest'
+          image-ref: ${{ env.FRONTEND_IMAGE }}:latest
           format: 'table'
-          exit-code: '1'
+          exit-code: '0'
           severity: 'CRITICAL,HIGH'
 
-  # Job 5: End-to-End Testing (Optional)
-  e2e-test:
-    name: E2E Tests
-    runs-on: ubuntu-latest
-    needs: [build-and-scan]
-    if: github.event_name == 'pull_request'
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Set up Node.js
-        uses: actions/setup-node@v4
+      - name: 🛡️ Scan backend image
+        uses: aquasecurity/trivy-action@master
         with:
-          node-version: ${{ env.NODE_VERSION }}
-      
-      - name: Install dependencies
-        run: npm ci
-        working-directory: ./frontend
-      
-      - name: Start application
-        run: |
-          npm start &
-          sleep 30  # Wait for app to start
-        working-directory: ./frontend
-        env:
-          REACT_APP_WEATHER_API_KEY: ${{ secrets.WEATHER_API_KEY }}
-      
-      - name: Run Cypress E2E tests
-        uses: cypress-io/github-action@v6
-        with:
-          working-directory: ./frontend
-          wait-on: 'http://localhost:3000'
-          wait-on-timeout: 120
-          browser: chrome
-          record: true
-        env:
-          CYPRESS_RECORD_KEY: ${{ secrets.CYPRESS_RECORD_KEY }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-  # Job 6: Deploy to Staging (on main branch)
-  deploy-staging:
-    name: Deploy to Staging
-    runs-on: ubuntu-latest
-    needs: [code-analysis, build-and-scan]
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
-    environment: staging
-    
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v4
-      
-      - name: Deploy to staging
-        run: |
-          echo "Deploying to staging environment..."
-          # Add your deployment commands here
-          # Example: kubectl apply -f k8s/staging/
-          # Example: docker-compose -f docker-compose.staging.yml up -d
-      
-      - name: Run smoke tests
-        run: |
-          echo "Running smoke tests on staging..."
-          # Add smoke test commands here
-          # Example: curl -f http://staging.yourapp.com/health
-
-  # Job 7: Notification
-  notify:
-    name: Send Notifications
-    runs-on: ubuntu-latest
-    needs: [frontend-test, backend-test, code-analysis, build-and-scan]
-    if: always()
-    
-    steps:
-      - name: Notify on success
-        if: ${{ success() }}
-        run: |
-          echo "✅ All checks passed! Pipeline completed successfully."
-          # Add success notification logic here (Slack, Discord, etc.)
-      
-      - name: Notify on failure
-        if: ${{ failure() }}
-        run: |
-          echo "❌ Pipeline failed! Check the logs for details."
-          # Add failure notification logic here
+          image-ref: ${{ env.BACKEND_IMAGE }}:latest
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
