@@ -48,9 +48,11 @@ jobs:
           token: ${{ secrets.CODECOV_TOKEN }}
 
       - name: 🔎 Check frontend vulnerabilities
-        run: npm audit --audit-level=moderate
+        run: | 
+          npm install
+          npm audit --audit-level=critical
         working-directory: ./frontend
-        continue-on-error: true
+        continue-on-error: false
 
   # Job 2: Backend Testing
   backend-test:
