@@ -10,8 +10,6 @@ env:
   NODE_VERSION: '18'
   PYTHON_VERSION: '3.9'
   GHCR_REGISTRY: ghcr.io
-  FRONTEND_IMAGE: ghcr.io/${{ github.repository }}/weather-frontend
-  BACKEND_IMAGE: ghcr.io/${{ github.repository }}/weather-backend
 
 jobs:
   # Job 1: Frontend Testing
@@ -40,15 +38,6 @@ jobs:
         env:
           CI: true
       
-      - name: Upload coverage reports
-        uses: codecov/codecov-action@v4
-        with:
-          file: ./frontend/coverage/lcov.info
-          flags: frontend
-          name: frontend-coverage
-          token: ${{ secrets.CODECOV_TOKEN }}
-
-
       - name: ☁️ Upload frontend coverage to Codecov
         uses: codecov/codecov-action@v4
         with:
@@ -62,9 +51,7 @@ jobs:
         working-directory: ./frontend
         continue-on-error: true
 
-  # -------------------------
-  # 2. BACKEND TESTING JOB
-  # -------------------------
+  # Job 2: Backend Testing
   backend-test:
     name: Backend Tests & Audit
     runs-on: ubuntu-latest
@@ -105,71 +92,66 @@ jobs:
         working-directory: ./backend
         continue-on-error: true
 
-  # -------------------------
-  # 3. BUILD AND PUSH TO GHCR
-  # -------------------------
-    build-and-push:
-      name: Build & Push Docker Images to GHCR
-      runs-on: ubuntu-latest
-      needs: [frontend-test, backend-test]
-  
-      steps:
-        - name: ⬇️ Checkout code
-          uses: actions/checkout@v4
-  
-        - name: 🔐 Log in to GHCR
-          run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
-  
-        - name: 🛠️ Define image names (force lowercase)
-          run: |
-            REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-            FRONTEND_IMAGE="ghcr.io/$REPO_LOWER/weather-frontend"
-            BACKEND_IMAGE="ghcr.io/$REPO_LOWER/weather-backend"
-            echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> $GITHUB_ENV
-            echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> $GITHUB_ENV
-  
-        - name: 🛠️ Build frontend image
-          run: |
-            docker build -t $FRONTEND_IMAGE:latest ./frontend
-            docker tag $FRONTEND_IMAGE:latest $FRONTEND_IMAGE:${{ github.sha }}
-  
-        - name: 🛠️ Build backend image
-          run: |
-            docker build -t $BACKEND_IMAGE:latest ./backend
-            docker tag $BACKEND_IMAGE:latest $BACKEND_IMAGE:${{ github.sha }}
-  
-        - name: 📤 Push frontend image
-          run: |
-            docker push $FRONTEND_IMAGE:latest
-            docker push $FRONTEND_IMAGE:${{ github.sha }}
-  
-        - name: 📤 Push backend image
-          run: |
-            docker push $BACKEND_IMAGE:latest
-            docker push $BACKEND_IMAGE:${{ github.sha }}
-  
-    # -------------------------
-    # 4. IMAGE VULNERABILITY SCAN
-    # -------------------------
-    scan-images:
-      name: Scan Docker Images with Trivy
-      runs-on: ubuntu-latest
-      needs: [build-and-push]
-  
-      steps:
-        - name: 🛡️ Scan frontend image
-          uses: aquasecurity/trivy-action@master
-          with:
-            image-ref: ${{ env.FRONTEND_IMAGE }}:latest
-            format: 'table'
-            exit-code: '0'
-            severity: 'CRITICAL,HIGH'
-  
-        - name: 🛡️ Scan backend image
-          uses: aquasecurity/trivy-action@master
-          with:
-            image-ref: ${{ env.BACKEND_IMAGE }}:latest
-            format: 'table'
-            exit-code: '0'
-            severity: 'CRITICAL,HIGH'
-  
+  # Job 3: Build and Push to GHCR
+  build-and-push:
+    name: Build & Push Docker Images to GHCR
+    runs-on: ubuntu-latest
+    needs: [frontend-test, backend-test]
+
+    steps:
+      - name: ⬇️ Checkout code
+        uses: actions/checkout@v4
+
+      - name: 🔐 Log in to GHCR
+        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: 🛠️ Define image names (force lowercase)
+        run: |
+          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          FRONTEND_IMAGE="ghcr.io/$REPO_LOWER/weather-frontend"
+          BACKEND_IMAGE="ghcr.io/$REPO_LOWER/weather-backend"
+          echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> $GITHUB_ENV
+          echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> $GITHUB_ENV
+
+      - name: 🛠️ Build frontend image
+        run: |
+          docker build -t $FRONTEND_IMAGE:latest ./frontend
+          docker tag $FRONTEND_IMAGE:latest $FRONTEND_IMAGE:${{ github.sha }}
+
+      - name: 🛠️ Build backend image
+        run: |
+          docker build -t $BACKEND_IMAGE:latest ./backend
+          docker tag $BACKEND_IMAGE:latest $BACKEND_IMAGE:${{ github.sha }}
+
+      - name: 📤 Push frontend image
+        run: |
+          docker push $FRONTEND_IMAGE:latest
+          docker push $FRONTEND_IMAGE:${{ github.sha }}
+
+      - name: 📤 Push backend image
+        run: |
+          docker push $BACKEND_IMAGE:latest
+          docker push $BACKEND_IMAGE:${{ github.sha }}
+
+  # Job 4: Image Vulnerability Scan
+  scan-images:
+    name: Scan Docker Images with Trivy
+    runs-on: ubuntu-latest
+    needs: [build-and-push]
+
+    steps:
+      - name: 🛡️ Scan frontend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.FRONTEND_IMAGE }}:latest
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
+
+      - name: 🛡️ Scan backend image
+        uses: aquasecurity/trivy-action@master
+        with:
+          image-ref: ${{ env.BACKEND_IMAGE }}:latest
+          format: 'table'
+          exit-code: '0'
+          severity: 'CRITICAL,HIGH'
