@@ -107,9 +107,9 @@ jobs:
 
       - name: 🛠️ Define image names (force lowercase)
         run: |
-          REPO_LOWER=$(echo "${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
-          FRONTEND_IMAGE="ghcr.io/$REPO_LOWER/weather-frontend"
-          BACKEND_IMAGE="ghcr.io/$REPO_LOWER/weather-backend"
+          USERNAME=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
+          FRONTEND_IMAGE="ghcr.io/$USERNAME/weather-frontend"
+          BACKEND_IMAGE="ghcr.io/$USERNAME/weather-backend"
           echo "FRONTEND_IMAGE=$FRONTEND_IMAGE" >> $GITHUB_ENV
           echo "BACKEND_IMAGE=$BACKEND_IMAGE" >> $GITHUB_ENV
 
