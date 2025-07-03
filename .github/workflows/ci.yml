@@ -124,7 +124,7 @@ jobs:
 
       - name: 🛠️ Build frontend image
         run: |
-          docker build -t $FRONTEND_IMAGE:latest ./frontend
+          docker build -f ./frontend/Dockerfile -t $FRONTEND_IMAGE:latest ./frontend
           docker tag $FRONTEND_IMAGE:latest $FRONTEND_IMAGE:${{ github.sha }}
 
       - name: 🛠️ Build backend image
