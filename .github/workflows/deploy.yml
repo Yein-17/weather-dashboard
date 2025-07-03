@@ -12,28 +12,43 @@ jobs:
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
 
     steps:
-      - name: 🧾 Decode SSH key and prepare file
+      - name: 🧾 Decode SSH Key and Prepare
         run: |
           echo "${{ secrets.EC2_SSH_KEY }}" | base64 -d > ec2_key.pem
           chmod 600 ec2_key.pem
 
-      - name: 🔐 Connect and deploy to EC2
+      - name: 🔐 Connect to EC2 and Deploy
         uses: appleboy/ssh-action@v1.0.0
         with:
           host: ${{ secrets.EC2_HOST }}
           username: ${{ secrets.EC2_USER }}
-          key_path: ./ec2_key.pem         # ✅ use the decoded file
+          key_path: ./ec2_key.pem
           script: |
-            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            # Force lowercase for Docker username
+            USERNAME=$(echo "${{ github.actor }}" | tr '[:upper:]' '[:lower:]')
+            FRONTEND_IMAGE=ghcr.io/$USERNAME/weather-frontend
+            BACKEND_IMAGE=ghcr.io/$USERNAME/weather-backend
 
-            docker pull ghcr.io/${{ github.actor }}/weather-frontend:latest
-            docker pull ghcr.io/${{ github.actor }}/weather-backend:latest
+            echo "${{ secrets.GHCR_PAT }}" | docker login ghcr.io -u $USERNAME --password-stdin
 
+            # Pull images from GHCR
+            docker pull $FRONTEND_IMAGE:latest
+            docker pull $BACKEND_IMAGE:latest
+
+            # Stop and remove old containers if they exist
             docker stop weather-frontend || true
             docker rm weather-frontend || true
             docker stop weather-backend || true
             docker rm weather-backend || true
 
-            docker run -d --name weather-frontend -p 80:3000 ghcr.io/${{ github.actor }}/weather-frontend:latest
+            # Run new containers
+            docker run -d \
+              --name weather-frontend \
+              -p 80:3000 \
+              $FRONTEND_IMAGE:latest
 
-            docker run -d --name weather-backend -p 5000:5000 -e WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }} ghcr.io/${{ github.actor }}/weather-backend:latest
+            docker run -d \
+              --name weather-backend \
+              -p 5000:5000 \
+              -e WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }} \
+              $BACKEND_IMAGE:latest
