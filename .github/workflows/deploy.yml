@@ -44,7 +44,7 @@ jobs:
             # Run new containers
             docker run -d \
               --name weather-frontend \
-              -p 80:3000 \
+              -p 80:80 \
               $FRONTEND_IMAGE:latest
 
             docker run -d \
