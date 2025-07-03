@@ -7,7 +7,7 @@ from flask_cors import CORS
 load_dotenv()
 
 app = Flask(__name__)
-CORS(app, origins=["http://localhost:3000"])
+CORS(app, origins="*")
 
 @app.route('/weather')
 def get_weather():
@@ -43,4 +43,4 @@ def get_weather():
         return jsonify({'error': 'Something went wrong', 'details': str(e)}), 500
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(debug=False, host='0.0.0.0', port=5000)
