@@ -2,7 +2,7 @@ name: 🚀 Deploy to EC2
 
 on:
   workflow_run:
-    workflows: ["CI Pipeline with GHCR"]
+    workflows: ["CI Pipeline with GHCR"]  # Make sure this matches exactly
     types:
       - completed
 
@@ -11,7 +11,6 @@ jobs:
     name: 🚀 Deploy to EC2
     runs-on: ubuntu-latest
     if: ${{ github.event.workflow_run.conclusion == 'success' }}
-    needs: [build-and-push]
 
     steps:
       - name: 🧾 Decode SSH Key
@@ -50,4 +49,3 @@ jobs:
               -p 5000:5000 \
               -e WEATHER_API_KEY=${{ secrets.WEATHER_API_KEY }} \
               ghcr.io/${{ github.actor }}/weather-backend:latest
-
